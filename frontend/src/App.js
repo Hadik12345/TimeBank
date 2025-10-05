@@ -20,7 +20,7 @@ import {
 import './App.css';
 
 // --- Supabase and API Configuration ---
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'https://timebank-note.onrender.com';
 const API = `${BACKEND_URL}/api`;
 
 const supabase = createClient(
