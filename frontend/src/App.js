@@ -12,9 +12,9 @@ import { Badge } from './components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
 import { Textarea } from './components/ui/textarea';
 import { toast, Toaster } from 'sonner';
-import { 
-    Clock, MapPin, User, CreditCard, Plus, Eye, Camera, CheckCircle, 
-    LayoutDashboard, Search, ListChecks, UserCog, LogOut, Briefcase, 
+import {
+    Clock, MapPin, User, CreditCard, Plus, Eye, Camera, CheckCircle,
+    LayoutDashboard, Search, ListChecks, UserCog, LogOut, Briefcase,
     Handshake, BarChart2, ArrowRight, ArrowLeft, UploadCloud
 } from 'lucide-react';
 import './App.css';
@@ -43,36 +43,46 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // This listener handles all auth events (SIGNED_IN, SIGNED_OUT, etc.)
-    // and also provides the initial session state when it first runs.
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        
+    // 1. Immediately check for an active session to resolve the initial loading state.
+    const checkUser = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
         if (session) {
-          // If a session exists, try to fetch the user profile
-          try {
-            const response = await axios.get(`${API}/auth/me`);
-            setUser(response.data);
-            // Only show the success toast on an explicit SIGNED_IN event, not on initial load
-            if(event === 'SIGNED_IN') {
-              toast.success("Logged in successfully!");
-            }
-          } catch (error) {
-            console.error("Auth state change error:", error);
-            setUser(null); // Log out user if profile fetch fails
-          }
+          const { data: userProfile } = await axios.get(`${API}/auth/me`);
+          setUser(userProfile);
         } else {
-          // If there's no session, ensure user is logged out
           setUser(null);
         }
-
-        // CRITICAL FIX: Set loading to false after the first check is complete.
-        // This prevents the loading screen from reappearing on subsequent auth events.
+      } catch (error) {
+        console.error("Initial user check failed:", error);
+        setUser(null);
+        // Even if it fails, we need to stop loading to show the auth page.
+      } finally {
         setLoading(false);
+      }
+    };
+
+    checkUser();
+
+    // 2. Set up a listener for subsequent auth state changes (e.g., login, logout).
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          // Refetch user profile on sign-in
+          axios.get(`${API}/auth/me`)
+            .then(response => setUser(response.data))
+            .catch(error => {
+              console.error("Failed to refetch user on SIGNED_IN", error);
+              setUser(null);
+            });
+          toast.success("Logged in successfully!");
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+        }
       }
     );
 
-    // Cleanup the listener on component unmount
+    // 3. Cleanup the listener on component unmount.
     return () => {
       authListener.subscription.unsubscribe();
     };
@@ -181,7 +191,7 @@ function DashboardLayout({ user, setUser }) {
             if (filters.taskType === 'all') delete params.taskType;
             const { data } = await axios.get(`${API}/tasks`, { params });
             setTasks(data);
-        } catch (error) { toast.error('Failed to load explore tasks.'); } 
+        } catch (error) { toast.error('Failed to load explore tasks.'); }
         finally { setLoadingTasks(false); }
     }, []);
 
@@ -193,7 +203,7 @@ function DashboardLayout({ user, setUser }) {
         } catch (error) { toast.error('Failed to load your tasks.'); }
         finally { setLoadingTasks(false); }
     }, []);
-    
+
     const refreshAllTasks = useCallback(() => {
         loadTasks();
         loadMyTasks();
@@ -204,7 +214,7 @@ function DashboardLayout({ user, setUser }) {
             refreshAllTasks();
         }
     }, [user, refreshAllTasks]);
-    
+
     return (
         <div className="flex h-screen bg-gray-100">
             <Sidebar user={user} onLogout={handleLogout} />
@@ -276,8 +286,8 @@ function BrowseTasks({ tasks, loadTasks, loading }) {
   const [filters, setFilters] = useState({ searchTerm: '', taskType: 'all' });
 
   useEffect(() => {
-    const handler = setTimeout(() => { 
-        loadTasks({ title: filters.searchTerm, task_type: filters.taskType }); 
+    const handler = setTimeout(() => {
+        loadTasks({ title: filters.searchTerm, task_type: filters.taskType });
     }, 500);
     return () => { clearTimeout(handler); };
   }, [filters, loadTasks]);
@@ -318,7 +328,7 @@ function CreateTask({ onTaskCreated }) {
     const [formData, setFormData] = useState({ title: '', description: '', duration: 30, credits_offered: 30, task_type: 'request', skills_required: '', location: '' });
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
-    
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
@@ -327,10 +337,10 @@ function CreateTask({ onTaskCreated }) {
             toast.success('Task created successfully!');
             onTaskCreated();
             navigate('/dashboard/my-tasks');
-        } catch (error) { toast.error(error.response?.data?.detail || 'Failed to create task'); } 
+        } catch (error) { toast.error(error.response?.data?.detail || 'Failed to create task'); }
         finally { setLoading(false); }
     };
-    
+
     return (
         <div>
             <h1 className="text-3xl font-bold text-gray-800 mb-6">Create a New Task</h1>
@@ -367,7 +377,7 @@ function ProfileSettings({ user, setUser }) {
             const { data } = await axios.put(`${API}/users/profile`, { ...formData, skills: formData.skills.split(',').map(s => s.trim()).filter(Boolean) });
             setUser(prevUser => ({ ...prevUser, ...data }));
             toast.success('Profile updated!');
-        } catch (error) { toast.error('Failed to update profile.'); } 
+        } catch (error) { toast.error('Failed to update profile.'); }
         finally { setLoading(false); }
     };
 
@@ -402,12 +412,12 @@ function TaskDetailPage({user, onUpdate}) {
             // A dedicated /api/tasks/{taskId} endpoint would be better.
             const { data } = await axios.get(`${API}/tasks/my`);
             const foundTask = data.find(t => t.id === taskId);
-            if (foundTask) { setTask(foundTask); } 
+            if (foundTask) { setTask(foundTask); }
             else { toast.error("Task not found or you don't have access."); navigate('/dashboard/my-tasks'); }
-        } catch (error) { toast.error("Failed to load task details."); } 
+        } catch (error) { toast.error("Failed to load task details."); }
         finally { setLoading(false); }
     }, [taskId, navigate]);
-    
+
     useEffect(() => { fetchTask(); }, [fetchTask]);
 
     const handlePhotoUpload = async (file, type) => {
@@ -425,12 +435,12 @@ function TaskDetailPage({user, onUpdate}) {
 
     const handleValidation = async () => {
         if (!task.before_photo || !task.after_photo) { toast.warning("Please upload both before and after photos."); return; }
-        try { 
-            await axios.post(`${API}/tasks/${taskId}/validate`); 
-            toast.success("Task submitted for validation!"); 
+        try {
+            await axios.post(`${API}/tasks/${taskId}/validate`);
+            toast.success("Task submitted for validation!");
             onUpdate(); // Refresh all tasks in the main layout
             fetchTask(); // Re-fetch this task to get updated status
-        } 
+        }
         catch (error) { toast.error(error.response?.data?.detail || "Validation failed."); }
     }
 
@@ -518,4 +528,3 @@ function PhotoUploader({ label, photo, onUpload }) {
 }
 
 export default App;
-
